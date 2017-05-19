@@ -24,12 +24,17 @@ import com.mapbox.mapboxsdk.maps.MapView;
 import com.mapbox.mapboxsdk.maps.MapboxMap;
 import com.mapbox.mapboxsdk.maps.OnMapReadyCallback;
 import com.mapbox.mapboxsdk.maps.UiSettings;
+import com.mapbox.mapboxsdk.style.layers.FillLayer;
+import com.mapbox.mapboxsdk.style.sources.GeoJsonSource;
 import com.mapbox.services.android.telemetry.location.LocationEngine;
 import com.mapbox.services.android.telemetry.location.LocationEngineListener;
 import com.mapbox.services.android.telemetry.permissions.PermissionsListener;
 import com.mapbox.services.android.telemetry.permissions.PermissionsManager;
 
 import java.util.List;
+
+import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.fillColor;
+import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.fillOpacity;
 
 public class MainActivity extends AppCompatActivity implements OnMapReadyCallback, PermissionsListener {
 
@@ -104,6 +109,22 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             permissionsManager.requestLocationPermissions(this);
         } else {
             enableLocation(true);
+        }
+
+        try {
+            GeoJsonSource southMissionStreetParking = new GeoJsonSource("south-mission-street-parking", "{\"type\":\"Feature\",\"properties\":{},\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[[-122.41285711526871,37.75097197341066],[-122.41272568702696,37.750777922989855],[-122.41183519363402,37.75082670073915],[-122.41176947951317,37.7510355963887],[-122.41285711526871,37.75097197341066]]]}}");
+            mapboxMap.addSource(southMissionStreetParking);
+
+            FillLayer southMissionArea = new FillLayer("south-mission-street-parking-fill", "south-mission-street-parking");
+
+            southMissionArea.setProperties(
+                    fillColor(Color.parseColor("#FF0088")),
+                    fillOpacity(0.4f)
+            );
+
+            mapboxMap.addLayer(southMissionArea);
+        } catch (Error error) {
+            System.out.println(error);
         }
     }
 
