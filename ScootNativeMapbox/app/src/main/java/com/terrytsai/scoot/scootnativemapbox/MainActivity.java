@@ -112,17 +112,20 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
 
         try {
-            GeoJsonSource southMissionStreetParking = new GeoJsonSource("south-mission-street-parking", "{\"type\":\"Feature\",\"properties\":{},\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[[-122.41285711526871,37.75097197341066],[-122.41272568702696,37.750777922989855],[-122.41183519363402,37.75082670073915],[-122.41176947951317,37.7510355963887],[-122.41285711526871,37.75097197341066]]]}}");
-            mapboxMap.addSource(southMissionStreetParking);
+            String innerSunsetGeofenceListString = "[{\"type\":\"Feature\",\"properties\":{},\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[[-122.466659545898,37.7620638129224],[-122.46687412262,37.7657787461117],[-122.476830482483,37.7653377135766],[-122.476519346237,37.7612834836084],[-122.469996213913,37.7615888308421],[-122.470135688782,37.7638179334808],[-122.468975633383,37.7638672327322],[-122.468869686127,37.7620129221311],[-122.466659545898,37.7620638129224]]]}}]";
+            GeoJsonSource innerSunsetStreetParking = new GeoJsonSource("south-mission-street-parking", "{\"type\":\"FeatureCollection\",\"features\":" +
+                    innerSunsetGeofenceListString  + "}");
 
-            FillLayer southMissionArea = new FillLayer("south-mission-street-parking-fill", "south-mission-street-parking");
+            mapboxMap.addSource(innerSunsetStreetParking);
 
-            southMissionArea.setProperties(
-                    fillColor(Color.parseColor("#FF0088")),
-                    fillOpacity(0.4f)
+            FillLayer innerSunsetArea = new FillLayer("south-mission-street-parking-fill", "south-mission-street-parking");
+
+            innerSunsetArea.setProperties(
+                    fillColor(Color.parseColor("#008CFF")),
+                    fillOpacity(0.08f)
             );
 
-            mapboxMap.addLayer(southMissionArea);
+            mapboxMap.addLayer(innerSunsetArea);
         } catch (Error error) {
             System.out.println(error);
         }
