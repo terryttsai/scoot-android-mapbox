@@ -2,6 +2,8 @@ package com.terrytsai.scoot.scootnativemapbox;
 
 import android.Manifest;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.location.Location;
@@ -25,8 +27,13 @@ import com.mapbox.mapboxsdk.maps.MapView;
 import com.mapbox.mapboxsdk.maps.MapboxMap;
 import com.mapbox.mapboxsdk.maps.OnMapReadyCallback;
 import com.mapbox.mapboxsdk.maps.UiSettings;
+import com.mapbox.mapboxsdk.style.functions.Function;
+import com.mapbox.mapboxsdk.style.functions.stops.Stop;
+import com.mapbox.mapboxsdk.style.functions.stops.Stops;
 import com.mapbox.mapboxsdk.style.layers.CircleLayer;
 import com.mapbox.mapboxsdk.style.layers.FillLayer;
+import com.mapbox.mapboxsdk.style.layers.PropertyFactory;
+import com.mapbox.mapboxsdk.style.layers.SymbolLayer;
 import com.mapbox.mapboxsdk.style.sources.GeoJsonSource;
 import com.mapbox.services.android.telemetry.location.LocationEngine;
 import com.mapbox.services.android.telemetry.location.LocationEngineListener;
@@ -50,6 +57,7 @@ import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.circleColor;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.circleRadius;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.fillColor;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.fillOpacity;
+import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconSize;
 
 public class MainActivity extends AppCompatActivity implements OnMapReadyCallback, PermissionsListener {
 
@@ -180,7 +188,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         CircleLayer scootersLayer = new CircleLayer("vehicles", "vehicles");
         scootersLayer.setSourceLayer("vehicles");
         scootersLayer.setProperties(
-                circleRadius(5f),
+                circleRadius(Function.zoom(Stops.exponential(
+                        Stop.stop(12f, circleRadius(1.5f)),
+                        Stop.stop(15f, circleRadius(6f))
+                ))),
                 circleColor(Color.argb(1, 55, 148, 179))
         );
 
@@ -294,20 +305,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     private void setMapboxLocationsSource() {
         try {
-            mapboxMap.addSource(new GeoJsonSource("locations", locationsList));
+            mapboxMap.addSource(new GeoJsonSource("locations-source", locationsList));
             mapboxMap.addSource(new GeoJsonSource("streetParking", streetParkingList));
         } catch (Error error) {
             System.out.println(error);
         }
-
-        CircleLayer locationsLayer = new CircleLayer("locations", "locations");
-        locationsLayer.setSourceLayer("locations");
-        locationsLayer.setProperties(
-                circleRadius(9f),
-                circleColor(Color.argb(1, 0, 0, 0))
-        );
-
-        mapboxMap.addLayer(locationsLayer);
 
         FillLayer streetParkingLayer = new FillLayer("streetParking", "streetParking");
 
@@ -317,6 +319,18 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         );
 
         mapboxMap.addLayer(streetParkingLayer);
+
+        SymbolLayer locationMarkersLayer = new SymbolLayer("locations-layer", "locations-source")
+                .withProperties(
+                        PropertyFactory.iconImage("my-marker-image"),
+                        PropertyFactory.iconAllowOverlap(true),
+                        PropertyFactory.iconSize(Function.zoom(Stops.exponential(
+                                Stop.stop(12f, iconSize(0.5f)),
+                                Stop.stop(15f, iconSize(1.5f))
+                        )))
+                );
+
+        mapboxMap.addLayer(locationMarkersLayer);
     }
 
     @Override
@@ -363,6 +377,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         new VehicleJsonTask().execute("https://app.scoot.co/api/v1/scooters.json");
         new LocationJsonTask().execute("https://app.scoot.co/api/v3/locations.json");
+
+        Bitmap icon = BitmapFactory.decodeResource(MainActivity.this.getResources(), R.drawable.blue_marker_view);
+
+        // Add the marker image to map
+        mapboxMap.addImage("my-marker-image", icon);
     }
 
     @Override
