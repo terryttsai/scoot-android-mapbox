@@ -3,27 +3,29 @@ package com.terrytsai.scoot.scootnativemapbox;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.location.Location;
+import android.os.AsyncTask;
 import android.support.annotation.NonNull;
 import android.support.design.widget.FloatingActionButton;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.Toast;
 
 import com.mapbox.mapboxsdk.Mapbox;
 import com.mapbox.mapboxsdk.annotations.Marker;
-import com.mapbox.mapboxsdk.annotations.MarkerViewOptions;
 import com.mapbox.mapboxsdk.camera.CameraUpdateFactory;
 import com.mapbox.mapboxsdk.geometry.LatLng;
-import com.mapbox.mapboxsdk.geometry.LatLngBounds;
 import com.mapbox.mapboxsdk.location.LocationSource;
 import com.mapbox.mapboxsdk.maps.MapView;
 import com.mapbox.mapboxsdk.maps.MapboxMap;
 import com.mapbox.mapboxsdk.maps.OnMapReadyCallback;
 import com.mapbox.mapboxsdk.maps.UiSettings;
+import com.mapbox.mapboxsdk.style.layers.CircleLayer;
 import com.mapbox.mapboxsdk.style.layers.FillLayer;
 import com.mapbox.mapboxsdk.style.sources.GeoJsonSource;
 import com.mapbox.services.android.telemetry.location.LocationEngine;
@@ -31,8 +33,21 @@ import com.mapbox.services.android.telemetry.location.LocationEngineListener;
 import com.mapbox.services.android.telemetry.permissions.PermissionsListener;
 import com.mapbox.services.android.telemetry.permissions.PermissionsManager;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.List;
 
+import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.circleColor;
+import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.circleRadius;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.fillColor;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.fillOpacity;
 
@@ -45,10 +60,14 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private LocationEngineListener locationEngineListener;
     private PermissionsManager permissionsManager;
     private boolean firstPositionFound;
+    private String vehiclesList;
+    private String locationsList;
+    private String streetParkingList;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
         Mapbox.getInstance(this, getString(R.string.access_token));
         setContentView(R.layout.activity_main);
 
@@ -63,14 +82,247 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         locationEngine.activate();
     }
 
+    private class VehicleJsonTask extends AsyncTask<String, String, String> {
+
+        protected void onPreExecute() {
+            super.onPreExecute();
+
+            super.onPreExecute();
+            Toast.makeText(MainActivity.this, "Downloading Scoot Data...", Toast.LENGTH_SHORT).show();
+        }
+
+        protected String doInBackground(String... params) {
+
+
+            HttpURLConnection connection = null;
+            BufferedReader reader = null;
+
+            try {
+                URL url = new URL(params[0]);
+                connection = (HttpURLConnection) url.openConnection();
+                connection.connect();
+
+
+                InputStream stream = connection.getInputStream();
+
+                reader = new BufferedReader(new InputStreamReader(stream));
+
+                StringBuffer buffer = new StringBuffer();
+                String line = "";
+
+                while ((line = reader.readLine()) != null) {
+                    buffer.append(line+"\n");
+                    Log.d("Response: ", "> " + line);
+
+                }
+
+                return buffer.toString();
+
+
+            } catch (MalformedURLException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            } finally {
+                if (connection != null) {
+                    connection.disconnect();
+                }
+                try {
+                    if (reader != null) {
+                        reader.close();
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(String result) {
+            super.onPostExecute(result);
+            vehiclesList = formatJSONForVehicles(result);
+            setMapboxVehiclesSource();
+        }
+    }
+
+    private String formatJSONForVehicles(String input) {
+        String fragment = "{\"type\":\"Feature\",\"properties\":{},\"geometry\":{\"type\":\"Point\",\"coordinates\":[";
+        String fragmentEnd = "]}},";
+        String vehiclesString = "{\"type\":\"FeatureCollection\",\"features\":[";
+        String vehiclesStringEnd = "]}";
+
+        try {
+            JSONObject data = new JSONObject(input);
+
+            JSONArray scooters = data.getJSONArray("scooters");
+
+            for (int i = 0; i < scooters.length(); i++) {
+                JSONObject scoot = scooters.getJSONObject(i);
+                vehiclesString += fragment + scoot.getString("longitude") + "," + scoot.getString("latitude") + fragmentEnd;
+            }
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+        vehiclesString = vehiclesString.replaceAll(",$", "");
+        vehiclesString += vehiclesStringEnd;
+        return vehiclesString;
+    }
+
+    private void setMapboxVehiclesSource() {
+        try {
+            mapboxMap.addSource(new GeoJsonSource("vehicles", vehiclesList));
+        } catch (Error error) {
+            System.out.println(error);
+        }
+
+        CircleLayer scootersLayer = new CircleLayer("vehicles", "vehicles");
+        scootersLayer.setSourceLayer("vehicles");
+        scootersLayer.setProperties(
+                circleRadius(5f),
+                circleColor(Color.argb(1, 55, 148, 179))
+        );
+
+        mapboxMap.addLayer(scootersLayer);
+    }
+
+    private class LocationJsonTask extends AsyncTask<String, String, String> {
+
+        protected void onPreExecute() {
+            super.onPreExecute();
+
+            super.onPreExecute();
+            Toast.makeText(MainActivity.this, "Downloading Location Data...", Toast.LENGTH_SHORT).show();
+        }
+
+        protected String doInBackground(String... params) {
+
+
+            HttpURLConnection connection = null;
+            BufferedReader reader = null;
+
+            try {
+                URL url = new URL(params[0]);
+                connection = (HttpURLConnection) url.openConnection();
+                connection.connect();
+
+
+                InputStream stream = connection.getInputStream();
+
+                reader = new BufferedReader(new InputStreamReader(stream));
+
+                StringBuffer buffer = new StringBuffer();
+                String line = "";
+
+                while ((line = reader.readLine()) != null) {
+                    buffer.append(line+"\n");
+                    Log.d("Response: ", "> " + line);
+
+                }
+
+                return buffer.toString();
+
+
+            } catch (MalformedURLException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            } finally {
+                if (connection != null) {
+                    connection.disconnect();
+                }
+                try {
+                    if (reader != null) {
+                        reader.close();
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(String result) {
+            super.onPostExecute(result);
+            String[] locationsArray = formatJSONForLocations(result);
+            locationsList = locationsArray[0];
+            streetParkingList = locationsArray[1];
+            setMapboxLocationsSource();
+        }
+    }
+
+    private String[] formatJSONForLocations(String input) {
+        String fragment = "{\"type\":\"Feature\",\"properties\":{},\"geometry\":{\"type\":\"Point\",\"coordinates\":[";
+        String fragmentEnd = "]}},";
+        String locationsString = "{\"type\":\"FeatureCollection\",\"features\":[";
+        String locationsStringEnd = "]}";
+
+        String streetParkingString = "{\"type\":\"FeatureCollection\",\"features\":[";
+        String streetParkingStringEnd = "]}";
+
+        try {
+            JSONObject data = new JSONObject(input);
+
+            JSONArray locations = data.getJSONArray("locations");
+
+            for (int i = 0; i < locations.length(); i++) {
+                JSONObject location = locations.getJSONObject(i);
+                if (location.getInt("location_type_id") == 1) {
+                    locationsString += fragment + location.getString("longitude") + "," + location.getString("latitude") + fragmentEnd;
+                }
+                if (location.getInt("location_type_id") == 4) {
+                    String streetParkingObj = location.getString("geofence_geojson");
+                    streetParkingString += streetParkingObj.substring(1, streetParkingObj.length() - 1) + ",";
+                }
+            }
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+        locationsString = locationsString.replaceAll(",$", "");
+        locationsString += locationsStringEnd;
+
+        streetParkingString = streetParkingString.replaceAll(",$", "");
+        streetParkingString += streetParkingStringEnd;
+
+        String[] result = {locationsString, streetParkingString};
+        return result;
+    }
+
+
+    private void setMapboxLocationsSource() {
+        try {
+            mapboxMap.addSource(new GeoJsonSource("locations", locationsList));
+            mapboxMap.addSource(new GeoJsonSource("streetParking", streetParkingList));
+        } catch (Error error) {
+            System.out.println(error);
+        }
+
+        CircleLayer locationsLayer = new CircleLayer("locations", "locations");
+        locationsLayer.setSourceLayer("locations");
+        locationsLayer.setProperties(
+                circleRadius(9f),
+                circleColor(Color.argb(1, 0, 0, 0))
+        );
+
+        mapboxMap.addLayer(locationsLayer);
+
+        FillLayer streetParkingLayer = new FillLayer("streetParking", "streetParking");
+
+        streetParkingLayer.setProperties(
+                fillColor(Color.parseColor("#008CFF")),
+                fillOpacity(0.18f)
+        );
+
+        mapboxMap.addLayer(streetParkingLayer);
+    }
+
     @Override
     public void onMapReady(final MapboxMap mapboxMap) {
-        final MarkerViewOptions markerViewOptions = new MarkerViewOptions()
-                .position(new LatLng(37.774929, -122.419416))
-                .title("Hi there!")
-                .snippet("I am a snippet");
 
-//                // Should be the bounds of the map, if only I can get this implemented
+//                // Should be the bounds of the map, just need to get it implemented
 ////                LatLngBounds latLngBounds = new LatLngBounds.Builder()
 ////                    .include(new LatLng(36.532128, -93.489121)) // Northeast
 ////                    .include(new LatLng(25.837058, -106.646234)) // Southwest
@@ -92,8 +344,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             }
         });
 
-        mapboxMap.addMarker(markerViewOptions);
-
         floatingActionButton = (FloatingActionButton) findViewById(R.id.location_toggle_fab);
         floatingActionButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -111,24 +361,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             enableLocation(true);
         }
 
-        try {
-            String innerSunsetGeofenceListString = "[{\"type\":\"Feature\",\"properties\":{},\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[[-122.466659545898,37.7620638129224],[-122.46687412262,37.7657787461117],[-122.476830482483,37.7653377135766],[-122.476519346237,37.7612834836084],[-122.469996213913,37.7615888308421],[-122.470135688782,37.7638179334808],[-122.468975633383,37.7638672327322],[-122.468869686127,37.7620129221311],[-122.466659545898,37.7620638129224]]]}}]";
-            GeoJsonSource innerSunsetStreetParking = new GeoJsonSource("south-mission-street-parking", "{\"type\":\"FeatureCollection\",\"features\":" +
-                    innerSunsetGeofenceListString  + "}");
-
-            mapboxMap.addSource(innerSunsetStreetParking);
-
-            FillLayer innerSunsetArea = new FillLayer("south-mission-street-parking-fill", "south-mission-street-parking");
-
-            innerSunsetArea.setProperties(
-                    fillColor(Color.parseColor("#008CFF")),
-                    fillOpacity(0.08f)
-            );
-
-            mapboxMap.addLayer(innerSunsetArea);
-        } catch (Error error) {
-            System.out.println(error);
-        }
+        new VehicleJsonTask().execute("https://app.scoot.co/api/v1/scooters.json");
+        new LocationJsonTask().execute("https://app.scoot.co/api/v3/locations.json");
     }
 
     @Override
