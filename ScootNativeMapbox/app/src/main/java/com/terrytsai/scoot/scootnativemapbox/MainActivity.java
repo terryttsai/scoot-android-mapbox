@@ -39,6 +39,8 @@ import com.mapbox.services.android.telemetry.location.LocationEngine;
 import com.mapbox.services.android.telemetry.location.LocationEngineListener;
 import com.mapbox.services.android.telemetry.permissions.PermissionsListener;
 import com.mapbox.services.android.telemetry.permissions.PermissionsManager;
+import com.mapbox.services.commons.geojson.Feature;
+import com.mapbox.services.commons.geojson.FeatureCollection;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -51,12 +53,16 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.List;
 
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.circleColor;
+import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.circleOpacity;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.circleRadius;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.fillColor;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.fillOpacity;
+import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconAllowOverlap;
+import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconImage;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconSize;
 
 public class MainActivity extends AppCompatActivity implements OnMapReadyCallback, PermissionsListener {
@@ -71,6 +77,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private String vehiclesList;
     private String locationsList;
     private String streetParkingList;
+    private FeatureCollection streetParkingDots;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -192,7 +199,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         Stop.stop(12f, circleRadius(1.5f)),
                         Stop.stop(15f, circleRadius(6f))
                 ))),
-                circleColor(Color.argb(1, 55, 148, 179))
+                circleColor(Color.argb(1, 244, 67, 54))
         );
 
         mapboxMap.addLayer(scootersLayer);
@@ -273,6 +280,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         String streetParkingString = "{\"type\":\"FeatureCollection\",\"features\":[";
         String streetParkingStringEnd = "]}";
 
+        List<Feature> streetParkingCoordinates = new ArrayList<>();
+
         try {
             JSONObject data = new JSONObject(input);
 
@@ -286,8 +295,19 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 if (location.getInt("location_type_id") == 4) {
                     String streetParkingObj = location.getString("geofence_geojson");
                     streetParkingString += streetParkingObj.substring(1, streetParkingObj.length() - 1) + ",";
+
+                    String streetParkingDotsStr = location.getString("parking_geojson");
+                    if (!streetParkingDotsStr.equals("")) {
+                        JSONArray streetParkingDotsArray = new JSONArray(streetParkingDotsStr);
+                        for (int j = 0; j < streetParkingDotsArray.length(); j++) {
+                            Feature streetParkingDotsFeature = Feature.fromJson(streetParkingDotsArray.get(j).toString());
+                            streetParkingCoordinates.add(streetParkingDotsFeature);
+                        }
+                    }
                 }
             }
+
+            streetParkingDots = FeatureCollection.fromFeatures(streetParkingCoordinates);
         } catch (JSONException e) {
             e.printStackTrace();
         }
@@ -306,12 +326,13 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private void setMapboxLocationsSource() {
         try {
             mapboxMap.addSource(new GeoJsonSource("locations-source", locationsList));
-            mapboxMap.addSource(new GeoJsonSource("streetParking", streetParkingList));
+            mapboxMap.addSource(new GeoJsonSource("street-parking-source", streetParkingList));
+            mapboxMap.addSource(new GeoJsonSource("street-parking-dots-source", streetParkingDots));
         } catch (Error error) {
             System.out.println(error);
         }
 
-        FillLayer streetParkingLayer = new FillLayer("streetParking", "streetParking");
+        FillLayer streetParkingLayer = new FillLayer("streetParking", "street-parking-source");
 
         streetParkingLayer.setProperties(
                 fillColor(Color.parseColor("#008CFF")),
@@ -320,11 +341,23 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         mapboxMap.addLayer(streetParkingLayer);
 
+        CircleLayer streetParkingDotsLayer = new CircleLayer("street-parking-dots-layer", "street-parking-dots-source")
+                .withProperties(
+                        circleRadius(Function.zoom(Stops.exponential(
+                                Stop.stop(12f, circleRadius(1.5f)),
+                                Stop.stop(15f, circleRadius(6f))
+                        ))),
+                        circleColor(Color.argb(1, 55, 148, 179)),
+                        circleOpacity(.3f)
+                );
+
+        mapboxMap.addLayer(streetParkingDotsLayer);
+
         SymbolLayer locationMarkersLayer = new SymbolLayer("locations-layer", "locations-source")
                 .withProperties(
-                        PropertyFactory.iconImage("my-marker-image"),
-                        PropertyFactory.iconAllowOverlap(true),
-                        PropertyFactory.iconSize(Function.zoom(Stops.exponential(
+                        iconImage("my-marker-image"),
+                        iconAllowOverlap(true),
+                        iconSize(Function.zoom(Stops.exponential(
                                 Stop.stop(12f, iconSize(0.5f)),
                                 Stop.stop(15f, iconSize(1.5f))
                         )))
