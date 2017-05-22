@@ -1,10 +1,12 @@
 package com.terrytsai.scoot.scootnativemapbox;
 
 import android.Manifest;
+import android.animation.ValueAnimator;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.PointF;
 import android.graphics.drawable.ColorDrawable;
 import android.location.Location;
 import android.os.AsyncTask;
@@ -35,6 +37,7 @@ import com.mapbox.mapboxsdk.style.layers.FillLayer;
 import com.mapbox.mapboxsdk.style.layers.PropertyFactory;
 import com.mapbox.mapboxsdk.style.layers.SymbolLayer;
 import com.mapbox.mapboxsdk.style.sources.GeoJsonSource;
+import com.mapbox.mapboxsdk.style.sources.Source;
 import com.mapbox.services.android.telemetry.location.LocationEngine;
 import com.mapbox.services.android.telemetry.location.LocationEngineListener;
 import com.mapbox.services.android.telemetry.permissions.PermissionsListener;
@@ -65,7 +68,7 @@ import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconAllowOverlap
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconImage;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconSize;
 
-public class MainActivity extends AppCompatActivity implements OnMapReadyCallback, PermissionsListener {
+public class MainActivity extends AppCompatActivity implements OnMapReadyCallback, PermissionsListener, MapboxMap.OnMapClickListener {
 
     private MapView mapView;
     private MapboxMap mapboxMap;
@@ -78,6 +81,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private String locationsList;
     private String streetParkingList;
     private FeatureCollection streetParkingDots;
+    private boolean markerSelected = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -364,6 +368,20 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 );
 
         mapboxMap.addLayer(locationMarkersLayer);
+
+        // Add the selected marker source and layer
+        FeatureCollection emptySource = FeatureCollection.fromFeatures(new Feature[]{});
+        Source selectedMarkerSource = new GeoJsonSource("selected-marker", emptySource);
+        mapboxMap.addSource(selectedMarkerSource);
+
+        SymbolLayer selectedMarker = new SymbolLayer("selected-marker-layer", "selected-marker")
+                .withProperties(
+                        iconImage("my-marker-image"),
+                        iconSize(2f)
+                );
+        mapboxMap.addLayer(selectedMarker);
+
+        mapboxMap.setOnMapClickListener(this);
     }
 
     @Override
@@ -408,13 +426,52 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             enableLocation(true);
         }
 
-        new VehicleJsonTask().execute("https://app.scoot.co/api/v1/scooters.json");
-        new LocationJsonTask().execute("https://app.scoot.co/api/v3/locations.json");
-
         Bitmap icon = BitmapFactory.decodeResource(MainActivity.this.getResources(), R.drawable.blue_marker_view);
 
         // Add the marker image to map
         mapboxMap.addImage("my-marker-image", icon);
+
+        new VehicleJsonTask().execute("https://app.scoot.co/api/v1/scooters.json");
+        new LocationJsonTask().execute("https://app.scoot.co/api/v3/locations.json");
+    }
+
+    @Override
+    public void onMapClick(@NonNull LatLng point) {
+        final SymbolLayer marker = (SymbolLayer) mapboxMap.getLayer("selected-marker-layer");
+
+        final PointF pixel = mapboxMap.getProjection().toScreenLocation(point);
+        List<Feature> features = mapboxMap.queryRenderedFeatures(pixel, "locations-layer");
+        List<Feature> selectedFeature = mapboxMap.queryRenderedFeatures(pixel, "selected-marker-layer");
+
+        if (selectedFeature.size() > 0 && markerSelected) {
+            return;
+        }
+
+        if (features.isEmpty()) {
+            if (markerSelected) {
+                FeatureCollection emptySource = FeatureCollection.fromFeatures(new Feature[]{});
+                GeoJsonSource source = mapboxMap.getSourceAs("selected-marker");
+                if (source != null) {
+                    source.setGeoJson(emptySource);
+                }
+                markerSelected = false;
+            }
+            return;
+        }
+
+        FeatureCollection featureCollection = FeatureCollection.fromFeatures(
+                new Feature[]{Feature.fromGeometry(features.get(0).getGeometry())});
+        GeoJsonSource source = mapboxMap.getSourceAs("selected-marker");
+        if (source != null) {
+            source.setGeoJson(featureCollection);
+        }
+
+        if (markerSelected) {
+            markerSelected = false;
+        }
+        if (features.size() > 0) {
+            markerSelected = true;
+        }
     }
 
     @Override
