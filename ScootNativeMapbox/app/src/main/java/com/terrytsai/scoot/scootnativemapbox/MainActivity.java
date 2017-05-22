@@ -66,6 +66,7 @@ import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.fillColor;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.fillOpacity;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconAllowOverlap;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconImage;
+import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconOffset;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconSize;
 
 public class MainActivity extends AppCompatActivity implements OnMapReadyCallback, PermissionsListener, MapboxMap.OnMapClickListener {
@@ -364,7 +365,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         iconSize(Function.zoom(Stops.exponential(
                                 Stop.stop(12f, iconSize(0.5f)),
                                 Stop.stop(15f, iconSize(1.5f))
-                        )))
+                        ))),
+                        iconOffset(new Float[]{0f, 1.5f})
                 );
 
         mapboxMap.addLayer(locationMarkersLayer);
