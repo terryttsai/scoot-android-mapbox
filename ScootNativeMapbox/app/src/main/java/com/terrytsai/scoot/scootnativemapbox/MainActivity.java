@@ -437,25 +437,16 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     @Override
     public void onMapClick(@NonNull LatLng point) {
-        final SymbolLayer marker = (SymbolLayer) mapboxMap.getLayer("selected-marker-layer");
-
         final PointF pixel = mapboxMap.getProjection().toScreenLocation(point);
         List<Feature> features = mapboxMap.queryRenderedFeatures(pixel, "locations-layer");
-        List<Feature> selectedFeature = mapboxMap.queryRenderedFeatures(pixel, "selected-marker-layer");
-
-        if (selectedFeature.size() > 0 && markerSelected) {
-            return;
-        }
 
         if (features.isEmpty()) {
-            if (markerSelected) {
-                FeatureCollection emptySource = FeatureCollection.fromFeatures(new Feature[]{});
-                GeoJsonSource source = mapboxMap.getSourceAs("selected-marker");
-                if (source != null) {
-                    source.setGeoJson(emptySource);
-                }
-                markerSelected = false;
+            FeatureCollection emptySource = FeatureCollection.fromFeatures(new Feature[]{});
+            GeoJsonSource source = mapboxMap.getSourceAs("selected-marker");
+            if (source != null) {
+                source.setGeoJson(emptySource);
             }
+            markerSelected = false;
             return;
         }
 
@@ -464,13 +455,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         GeoJsonSource source = mapboxMap.getSourceAs("selected-marker");
         if (source != null) {
             source.setGeoJson(featureCollection);
-        }
-
-        if (markerSelected) {
-            markerSelected = false;
-        }
-        if (features.size() > 0) {
-            markerSelected = true;
         }
     }
 
