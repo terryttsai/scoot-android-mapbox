@@ -1,13 +1,11 @@
 package com.terrytsai.scoot.scootnativemapbox;
 
 import android.Manifest;
-import android.animation.ValueAnimator;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.PointF;
-import android.graphics.drawable.ColorDrawable;
 import android.location.Location;
 import android.os.AsyncTask;
 import android.support.annotation.NonNull;
@@ -22,6 +20,7 @@ import android.widget.Toast;
 
 import com.mapbox.mapboxsdk.Mapbox;
 import com.mapbox.mapboxsdk.annotations.Marker;
+import com.mapbox.mapboxsdk.camera.CameraPosition;
 import com.mapbox.mapboxsdk.camera.CameraUpdateFactory;
 import com.mapbox.mapboxsdk.geometry.LatLng;
 import com.mapbox.mapboxsdk.location.LocationSource;
@@ -34,7 +33,8 @@ import com.mapbox.mapboxsdk.style.functions.stops.Stop;
 import com.mapbox.mapboxsdk.style.functions.stops.Stops;
 import com.mapbox.mapboxsdk.style.layers.CircleLayer;
 import com.mapbox.mapboxsdk.style.layers.FillLayer;
-import com.mapbox.mapboxsdk.style.layers.PropertyFactory;
+import com.mapbox.mapboxsdk.style.layers.Layer;
+import com.mapbox.mapboxsdk.style.layers.PropertyValue;
 import com.mapbox.mapboxsdk.style.layers.SymbolLayer;
 import com.mapbox.mapboxsdk.style.sources.GeoJsonSource;
 import com.mapbox.mapboxsdk.style.sources.Source;
@@ -59,6 +59,8 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.mapbox.mapboxsdk.style.layers.Property.NONE;
+import static com.mapbox.mapboxsdk.style.layers.Property.VISIBLE;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.circleColor;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.circleOpacity;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.circleRadius;
@@ -68,8 +70,9 @@ import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconAllowOverlap
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconImage;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconOffset;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconSize;
+import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.visibility;
 
-public class MainActivity extends AppCompatActivity implements OnMapReadyCallback, PermissionsListener, MapboxMap.OnMapClickListener {
+public class MainActivity extends AppCompatActivity implements OnMapReadyCallback, PermissionsListener, MapboxMap.OnMapClickListener, MapboxMap.OnCameraChangeListener {
 
     private MapView mapView;
     private MapboxMap mapboxMap;
@@ -81,8 +84,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private String vehiclesList;
     private String locationsList;
     private String streetParkingList;
-    private FeatureCollection streetParkingDots;
-    private boolean markerSelected = false;
+    private String streetParkingDots;
+    private Layer vehicleDotsLayer;
+    private Layer vehicleMarkersLayer;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -102,13 +106,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         locationEngine.activate();
     }
 
-    private class VehicleJsonTask extends AsyncTask<String, String, String> {
+    private class VehicleJsonTask extends AsyncTask<String, Void, String> {
 
         protected void onPreExecute() {
             super.onPreExecute();
-
-            super.onPreExecute();
-            Toast.makeText(MainActivity.this, "Downloading Scoot Data...", Toast.LENGTH_SHORT).show();
         }
 
         protected String doInBackground(String... params) {
@@ -136,7 +137,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
                 }
 
-                return buffer.toString();
+                return formatJSONForVehicles(buffer.toString());
 
 
             } catch (MalformedURLException e) {
@@ -161,7 +162,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         @Override
         protected void onPostExecute(String result) {
             super.onPostExecute(result);
-            vehiclesList = formatJSONForVehicles(result);
+            vehiclesList = result;
             setMapboxVehiclesSource();
         }
     }
@@ -179,7 +180,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
             for (int i = 0; i < scooters.length(); i++) {
                 JSONObject scoot = scooters.getJSONObject(i);
-                vehiclesString += fragment + scoot.getString("longitude") + "," + scoot.getString("latitude") + fragmentEnd;
+                if (scoot.getString("is_at_scoot_stop?").equals("true")) {
+                    vehiclesString += fragment + scoot.getString("longitude") + "," + scoot.getString("latitude") + fragmentEnd;
+                }
             }
         } catch (JSONException e) {
             e.printStackTrace();
@@ -192,34 +195,21 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     private void setMapboxVehiclesSource() {
         try {
-            mapboxMap.addSource(new GeoJsonSource("vehicles", vehiclesList));
+            mapboxMap.addSource(new GeoJsonSource("vehicles-source", vehiclesList));
         } catch (Error error) {
             System.out.println(error);
         }
 
-        CircleLayer scootersLayer = new CircleLayer("vehicles", "vehicles");
-        scootersLayer.setSourceLayer("vehicles");
-        scootersLayer.setProperties(
-                circleRadius(Function.zoom(Stops.exponential(
-                        Stop.stop(12f, circleRadius(1.5f)),
-                        Stop.stop(15f, circleRadius(6f))
-                ))),
-                circleColor(Color.argb(1, 244, 67, 54))
-        );
-
-        mapboxMap.addLayer(scootersLayer);
+        vehicleDotsLayer = mapboxMap.getLayer("vehicle-dots-layer");
     }
 
-    private class LocationJsonTask extends AsyncTask<String, String, String> {
+    private class LocationJsonTask extends AsyncTask<String, Void, String[]> {
 
         protected void onPreExecute() {
             super.onPreExecute();
-
-            super.onPreExecute();
-            Toast.makeText(MainActivity.this, "Downloading Location Data...", Toast.LENGTH_SHORT).show();
         }
 
-        protected String doInBackground(String... params) {
+        protected String[] doInBackground(String... params) {
 
 
             HttpURLConnection connection = null;
@@ -244,8 +234,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
                 }
 
-                return buffer.toString();
-
+                return formatJSONForLocations(buffer.toString());
 
             } catch (MalformedURLException e) {
                 e.printStackTrace();
@@ -267,11 +256,12 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
 
         @Override
-        protected void onPostExecute(String result) {
+        protected void onPostExecute(String[] result) {
             super.onPostExecute(result);
-            String[] locationsArray = formatJSONForLocations(result);
+            String[] locationsArray = result;
             locationsList = locationsArray[0];
             streetParkingList = locationsArray[1];
+            streetParkingDots = locationsArray[2];
             setMapboxLocationsSource();
         }
     }
@@ -285,6 +275,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         String streetParkingString = "{\"type\":\"FeatureCollection\",\"features\":[";
         String streetParkingStringEnd = "]}";
 
+        String streetParkingDotsString = "{\"type\":\"FeatureCollection\",\"features\":[";
+        String streetParkingDotsStringEnd = "]}";
+
         List<Feature> streetParkingCoordinates = new ArrayList<>();
 
         try {
@@ -294,25 +287,25 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
             for (int i = 0; i < locations.length(); i++) {
                 JSONObject location = locations.getJSONObject(i);
-                if (location.getInt("location_type_id") == 1) {
+                if (location.getInt("location_type_id") != 3 && location.getInt("location_type_id") != 4) {
                     locationsString += fragment + location.getString("longitude") + "," + location.getString("latitude") + fragmentEnd;
-                }
-                if (location.getInt("location_type_id") == 4) {
+                } else if (location.getInt("location_type_id") == 3 || location.getInt("location_type_id") == 4) {
                     String streetParkingObj = location.getString("geofence_geojson");
                     streetParkingString += streetParkingObj.substring(1, streetParkingObj.length() - 1) + ",";
 
                     String streetParkingDotsStr = location.getString("parking_geojson");
-                    if (!streetParkingDotsStr.equals("")) {
-                        JSONArray streetParkingDotsArray = new JSONArray(streetParkingDotsStr);
-                        for (int j = 0; j < streetParkingDotsArray.length(); j++) {
-                            Feature streetParkingDotsFeature = Feature.fromJson(streetParkingDotsArray.get(j).toString());
-                            streetParkingCoordinates.add(streetParkingDotsFeature);
-                        }
+                    if (!(streetParkingDotsStr.equals("") || streetParkingDotsStr.equals("[]"))) {
+                        // Doing things this way without string manipulation runs considerably slower
+//                        JSONArray streetParkingDotsArray = new JSONArray(streetParkingDotsStr);
+//                        for (int j = 0; j < streetParkingDotsArray.length(); j++) {
+//                            Feature streetParkingDotsFeature = Feature.fromJson(streetParkingDotsArray.get(j).toString());
+//                            streetParkingCoordinates.add(streetParkingDotsFeature);
+//                        }
+                        streetParkingDotsString += streetParkingDotsStr.substring(1, streetParkingDotsStr.length() - 1) + ",";
                     }
                 }
             }
 
-            streetParkingDots = FeatureCollection.fromFeatures(streetParkingCoordinates);
         } catch (JSONException e) {
             e.printStackTrace();
         }
@@ -323,7 +316,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         streetParkingString = streetParkingString.replaceAll(",$", "");
         streetParkingString += streetParkingStringEnd;
 
-        String[] result = {locationsString, streetParkingString};
+        streetParkingDotsString = streetParkingDotsString.replaceAll(",$", "");
+        streetParkingDotsString += streetParkingDotsStringEnd;
+
+        String[] result = {locationsString, streetParkingString, streetParkingDotsString};
         return result;
     }
 
@@ -337,40 +333,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             System.out.println(error);
         }
 
-        FillLayer streetParkingLayer = new FillLayer("streetParking", "street-parking-source");
-
-        streetParkingLayer.setProperties(
-                fillColor(Color.parseColor("#008CFF")),
-                fillOpacity(0.18f)
-        );
-
-        mapboxMap.addLayer(streetParkingLayer);
-
-        CircleLayer streetParkingDotsLayer = new CircleLayer("street-parking-dots-layer", "street-parking-dots-source")
-                .withProperties(
-                        circleRadius(Function.zoom(Stops.exponential(
-                                Stop.stop(12f, circleRadius(1.5f)),
-                                Stop.stop(15f, circleRadius(6f))
-                        ))),
-                        circleColor(Color.argb(1, 55, 148, 179)),
-                        circleOpacity(.3f)
-                );
-
-        mapboxMap.addLayer(streetParkingDotsLayer);
-
-        SymbolLayer locationMarkersLayer = new SymbolLayer("locations-layer", "locations-source")
-                .withProperties(
-                        iconImage("my-marker-image"),
-                        iconAllowOverlap(true),
-                        iconSize(Function.zoom(Stops.exponential(
-                                Stop.stop(12f, iconSize(0.5f)),
-                                Stop.stop(15f, iconSize(1.5f))
-                        ))),
-                        iconOffset(new Float[]{0f, 1.5f})
-                );
-
-        mapboxMap.addLayer(locationMarkersLayer);
-
         // Add the selected marker source and layer
         FeatureCollection emptySource = FeatureCollection.fromFeatures(new Feature[]{});
         Source selectedMarkerSource = new GeoJsonSource("selected-marker", emptySource);
@@ -378,12 +340,14 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         SymbolLayer selectedMarker = new SymbolLayer("selected-marker-layer", "selected-marker")
                 .withProperties(
-                        iconImage("my-marker-image"),
-                        iconSize(2f)
+                        iconImage("blue-marker"),
+                        iconSize(2f),
+                        iconOffset(new Float[]{0f, -12f})
                 );
         mapboxMap.addLayer(selectedMarker);
 
         mapboxMap.setOnMapClickListener(this);
+        mapboxMap.setOnCameraChangeListener(this);
     }
 
     @Override
@@ -428,10 +392,75 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             enableLocation(true);
         }
 
-        Bitmap icon = BitmapFactory.decodeResource(MainActivity.this.getResources(), R.drawable.blue_marker_view);
+        Bitmap blue_marker = BitmapFactory.decodeResource(MainActivity.this.getResources(), R.drawable.blue_marker_view);
+        Bitmap red_marker = BitmapFactory.decodeResource(MainActivity.this.getResources(), R.drawable.red_marker_view);
 
         // Add the marker image to map
-        mapboxMap.addImage("my-marker-image", icon);
+        mapboxMap.addImage("blue-marker", blue_marker);
+        mapboxMap.addImage("red-marker", red_marker);
+
+        // Street parking blue zones layer
+        FillLayer streetParkingZonesLayer = new FillLayer("street-parking-layer", "street-parking-source")
+                .withProperties(
+                        fillColor(Color.parseColor("#008CFF")),
+                        fillOpacity(0.12f)
+                );
+
+        // Street parking dots layer
+        CircleLayer streetParkingDotsLayer = new CircleLayer("street-parking-dots-layer", "street-parking-dots-source")
+                .withProperties(
+                        circleRadius(Function.zoom(Stops.exponential(
+                                Stop.stop(13f, circleRadius(1f)),
+                                Stop.stop(17f, circleRadius(6f))
+                        ))),
+                        circleColor(Color.argb(1, 55, 148, 179)),
+                        circleOpacity(Function.zoom(Stops.exponential(
+                                Stop.stop(14f, circleOpacity(0f)),
+                                Stop.stop(15f, circleOpacity(.3f))
+                        )))
+                );
+
+        // Vehicle dots layer
+        vehicleDotsLayer = new CircleLayer("vehicle-dots-layer", "vehicles-source")
+                .withProperties(
+                        circleRadius(Function.zoom(Stops.exponential(
+                                Stop.stop(12f, circleRadius(1.5f)),
+                                Stop.stop(15f, circleRadius(6f))
+                        ))),
+                        circleColor(Color.argb(1, 244, 67, 54)),
+                        visibility(NONE)
+                );
+
+        // Vehicle markers layer
+        vehicleMarkersLayer = new SymbolLayer("vehicle-markers-layer", "vehicles-source")
+                .withProperties(
+                        iconImage("red-marker"),
+                        iconAllowOverlap(true),
+                        iconSize(Function.zoom(Stops.exponential(
+                                Stop.stop(12f, iconSize(0.5f)),
+                                Stop.stop(15f, iconSize(1.5f))
+                        ))),
+                        iconOffset(new Float[]{0f, -12f})
+                );
+
+        // Location markers layer
+        SymbolLayer locationMarkersLayer = new SymbolLayer("locations-layer", "locations-source")
+                .withProperties(
+                        iconImage("blue-marker"),
+                        iconAllowOverlap(true),
+                        iconSize(Function.zoom(Stops.exponential(
+                                Stop.stop(12f, iconSize(0.5f)),
+                                Stop.stop(15f, iconSize(1.5f))
+                        ))),
+                        iconOffset(new Float[]{0f, -12f})
+                );
+
+        // Add the layers in order
+        mapboxMap.addLayer(streetParkingZonesLayer);
+        mapboxMap.addLayer(streetParkingDotsLayer);
+        mapboxMap.addLayer(vehicleDotsLayer);
+        mapboxMap.addLayer(vehicleMarkersLayer);
+        mapboxMap.addLayer(locationMarkersLayer);
 
         new VehicleJsonTask().execute("https://app.scoot.co/api/v1/scooters.json");
         new LocationJsonTask().execute("https://app.scoot.co/api/v3/locations.json");
@@ -448,7 +477,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             if (source != null) {
                 source.setGeoJson(emptySource);
             }
-            markerSelected = false;
             return;
         }
 
@@ -457,6 +485,19 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         GeoJsonSource source = mapboxMap.getSourceAs("selected-marker");
         if (source != null) {
             source.setGeoJson(featureCollection);
+        }
+    }
+
+    @Override
+    public void onCameraChange(@NonNull CameraPosition position) {
+        if (vehicleDotsLayer != null) {
+            if (position.zoom >= 14) {
+                vehicleDotsLayer.setProperties(visibility(NONE));
+                vehicleMarkersLayer.setProperties(visibility(VISIBLE));
+            } else {
+                vehicleDotsLayer.setProperties(visibility(VISIBLE));
+                vehicleMarkersLayer.setProperties(visibility(NONE));
+            }
         }
     }
 
