@@ -335,7 +335,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         iconImage("blue-marker"),
                         iconSize(2f),
                         iconOffset(new Float[]{0f, -12f}));
-        
+
         // Add another layer after loading locations, this seems to force the map to update without needing to zoom
         mapboxMap.addLayer(selectedMarker);
     }

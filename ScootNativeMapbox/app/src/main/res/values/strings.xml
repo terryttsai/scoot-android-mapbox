@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">ScootNativeMapbox</string>
+    <string name="mapbox_style_scoot">mapbox://styles/scoottech/cj1o7ymna001o2ro9nlfaalul</string>
+</resources>
