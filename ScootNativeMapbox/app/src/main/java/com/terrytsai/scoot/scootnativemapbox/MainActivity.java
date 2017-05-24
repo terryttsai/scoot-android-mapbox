@@ -87,6 +87,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private String streetParkingDots;
     private Layer vehicleDotsLayer;
     private Layer vehicleMarkersLayer;
+    private Layer streetParkingZonesLayer;
+    private Layer streetParkingDotsLayer;
+    private Layer locationMarkersLayer;
+    private Layer selectedMarker;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -113,7 +117,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
 
         protected String doInBackground(String... params) {
-
 
             HttpURLConnection connection = null;
             BufferedReader reader = null;
@@ -175,7 +178,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         try {
             JSONObject data = new JSONObject(input);
-
             JSONArray scooters = data.getJSONArray("scooters");
 
             for (int i = 0; i < scooters.length(); i++) {
@@ -199,8 +201,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         } catch (Error error) {
             System.out.println(error);
         }
-
-        vehicleDotsLayer = mapboxMap.getLayer("vehicle-dots-layer");
     }
 
     private class LocationJsonTask extends AsyncTask<String, Void, String[]> {
@@ -278,29 +278,20 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         String streetParkingDotsString = "{\"type\":\"FeatureCollection\",\"features\":[";
         String streetParkingDotsStringEnd = "]}";
 
-        List<Feature> streetParkingCoordinates = new ArrayList<>();
-
         try {
             JSONObject data = new JSONObject(input);
-
             JSONArray locations = data.getJSONArray("locations");
 
             for (int i = 0; i < locations.length(); i++) {
                 JSONObject location = locations.getJSONObject(i);
                 if (location.getInt("location_type_id") != 3 && location.getInt("location_type_id") != 4) {
                     locationsString += fragment + location.getString("longitude") + "," + location.getString("latitude") + fragmentEnd;
-                } else if (location.getInt("location_type_id") == 3 || location.getInt("location_type_id") == 4) {
+                } else {
                     String streetParkingObj = location.getString("geofence_geojson");
                     streetParkingString += streetParkingObj.substring(1, streetParkingObj.length() - 1) + ",";
 
                     String streetParkingDotsStr = location.getString("parking_geojson");
                     if (!(streetParkingDotsStr.equals("") || streetParkingDotsStr.equals("[]"))) {
-                        // Doing things this way without string manipulation runs considerably slower
-//                        JSONArray streetParkingDotsArray = new JSONArray(streetParkingDotsStr);
-//                        for (int j = 0; j < streetParkingDotsArray.length(); j++) {
-//                            Feature streetParkingDotsFeature = Feature.fromJson(streetParkingDotsArray.get(j).toString());
-//                            streetParkingCoordinates.add(streetParkingDotsFeature);
-//                        }
                         streetParkingDotsString += streetParkingDotsStr.substring(1, streetParkingDotsStr.length() - 1) + ",";
                     }
                 }
@@ -333,21 +324,20 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             System.out.println(error);
         }
 
-        // Add the selected marker source and layer
+        // Add the selected marker source
         FeatureCollection emptySource = FeatureCollection.fromFeatures(new Feature[]{});
         Source selectedMarkerSource = new GeoJsonSource("selected-marker", emptySource);
         mapboxMap.addSource(selectedMarkerSource);
 
-        SymbolLayer selectedMarker = new SymbolLayer("selected-marker-layer", "selected-marker")
+        // Selected location markers layer
+        selectedMarker = new SymbolLayer("selected-marker-layer", "selected-marker")
                 .withProperties(
                         iconImage("blue-marker"),
                         iconSize(2f),
-                        iconOffset(new Float[]{0f, -12f})
-                );
+                        iconOffset(new Float[]{0f, -12f}));
+        
+        // Add another layer after loading locations, this seems to force the map to update without needing to zoom
         mapboxMap.addLayer(selectedMarker);
-
-        mapboxMap.setOnMapClickListener(this);
-        mapboxMap.setOnCameraChangeListener(this);
     }
 
     @Override
@@ -392,22 +382,27 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             enableLocation(true);
         }
 
-        Bitmap blue_marker = BitmapFactory.decodeResource(MainActivity.this.getResources(), R.drawable.blue_marker_view);
-        Bitmap red_marker = BitmapFactory.decodeResource(MainActivity.this.getResources(), R.drawable.red_marker_view);
+        mapboxMap.setOnMapClickListener(this);
+        mapboxMap.setOnCameraChangeListener(this);
+
+        // Download json feeds and set mapbox source
+        new VehicleJsonTask().execute("https://app.scoot.co/api/v1/scooters.json");
+        new LocationJsonTask().execute("https://app.scoot.co/api/v3/locations.json");
 
         // Add the marker image to map
+        Bitmap blue_marker = BitmapFactory.decodeResource(MainActivity.this.getResources(), R.drawable.blue_marker_view);
+        Bitmap red_marker = BitmapFactory.decodeResource(MainActivity.this.getResources(), R.drawable.red_marker_view);
         mapboxMap.addImage("blue-marker", blue_marker);
         mapboxMap.addImage("red-marker", red_marker);
 
         // Street parking blue zones layer
-        FillLayer streetParkingZonesLayer = new FillLayer("street-parking-layer", "street-parking-source")
+        streetParkingZonesLayer = new FillLayer("street-parking-layer", "street-parking-source")
                 .withProperties(
                         fillColor(Color.parseColor("#008CFF")),
-                        fillOpacity(0.12f)
-                );
+                        fillOpacity(0.12f));
 
         // Street parking dots layer
-        CircleLayer streetParkingDotsLayer = new CircleLayer("street-parking-dots-layer", "street-parking-dots-source")
+        streetParkingDotsLayer = new CircleLayer("street-parking-dots-layer", "street-parking-dots-source")
                 .withProperties(
                         circleRadius(Function.zoom(Stops.exponential(
                                 Stop.stop(13f, circleRadius(1f)),
@@ -417,8 +412,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         circleOpacity(Function.zoom(Stops.exponential(
                                 Stop.stop(14f, circleOpacity(0f)),
                                 Stop.stop(15f, circleOpacity(.3f))
-                        )))
-                );
+                        ))));
 
         // Vehicle dots layer
         vehicleDotsLayer = new CircleLayer("vehicle-dots-layer", "vehicles-source")
@@ -428,8 +422,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                                 Stop.stop(15f, circleRadius(6f))
                         ))),
                         circleColor(Color.argb(1, 244, 67, 54)),
-                        visibility(NONE)
-                );
+                        visibility(NONE));
 
         // Vehicle markers layer
         vehicleMarkersLayer = new SymbolLayer("vehicle-markers-layer", "vehicles-source")
@@ -440,11 +433,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                                 Stop.stop(12f, iconSize(0.5f)),
                                 Stop.stop(15f, iconSize(1.5f))
                         ))),
-                        iconOffset(new Float[]{0f, -12f})
-                );
+                        iconOffset(new Float[]{0f, -12f}));
 
         // Location markers layer
-        SymbolLayer locationMarkersLayer = new SymbolLayer("locations-layer", "locations-source")
+        locationMarkersLayer = new SymbolLayer("locations-layer", "locations-source")
                 .withProperties(
                         iconImage("blue-marker"),
                         iconAllowOverlap(true),
@@ -452,8 +444,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                                 Stop.stop(12f, iconSize(0.5f)),
                                 Stop.stop(15f, iconSize(1.5f))
                         ))),
-                        iconOffset(new Float[]{0f, -12f})
-                );
+                        iconOffset(new Float[]{0f, -12f}));
 
         // Add the layers in order
         mapboxMap.addLayer(streetParkingZonesLayer);
@@ -461,9 +452,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         mapboxMap.addLayer(vehicleDotsLayer);
         mapboxMap.addLayer(vehicleMarkersLayer);
         mapboxMap.addLayer(locationMarkersLayer);
-
-        new VehicleJsonTask().execute("https://app.scoot.co/api/v1/scooters.json");
-        new LocationJsonTask().execute("https://app.scoot.co/api/v3/locations.json");
     }
 
     @Override
