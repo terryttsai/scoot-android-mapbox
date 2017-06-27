@@ -84,11 +84,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private String vehiclesList;
     private String locationsList;
     private String streetParkingList;
-    private String streetParkingDots;
     private Layer vehicleDotsLayer;
     private Layer vehicleMarkersLayer;
     private Layer streetParkingZonesLayer;
-    private Layer streetParkingDotsLayer;
     private Layer locationMarkersLayer;
     private Layer selectedMarker;
 
@@ -261,7 +259,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             String[] locationsArray = result;
             locationsList = locationsArray[0];
             streetParkingList = locationsArray[1];
-            streetParkingDots = locationsArray[2];
             setMapboxLocationsSource();
         }
     }
@@ -275,9 +272,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         String streetParkingString = "{\"type\":\"FeatureCollection\",\"features\":[";
         String streetParkingStringEnd = "]}";
 
-        String streetParkingDotsString = "{\"type\":\"FeatureCollection\",\"features\":[";
-        String streetParkingDotsStringEnd = "]}";
-
         try {
             JSONObject data = new JSONObject(input);
             JSONArray locations = data.getJSONArray("locations");
@@ -289,11 +283,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 } else {
                     String streetParkingObj = location.getString("geofence_geojson");
                     streetParkingString += streetParkingObj.substring(1, streetParkingObj.length() - 1) + ",";
-
-                    String streetParkingDotsStr = location.getString("parking_geojson");
-                    if (!(streetParkingDotsStr.equals("") || streetParkingDotsStr.equals("[]"))) {
-                        streetParkingDotsString += streetParkingDotsStr.substring(1, streetParkingDotsStr.length() - 1) + ",";
-                    }
                 }
             }
 
@@ -307,10 +296,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         streetParkingString = streetParkingString.replaceAll(",$", "");
         streetParkingString += streetParkingStringEnd;
 
-        streetParkingDotsString = streetParkingDotsString.replaceAll(",$", "");
-        streetParkingDotsString += streetParkingDotsStringEnd;
-
-        String[] result = {locationsString, streetParkingString, streetParkingDotsString};
+        String[] result = {locationsString, streetParkingString};
         return result;
     }
 
@@ -319,7 +305,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         try {
             mapboxMap.addSource(new GeoJsonSource("locations-source", locationsList));
             mapboxMap.addSource(new GeoJsonSource("street-parking-source", streetParkingList));
-            mapboxMap.addSource(new GeoJsonSource("street-parking-dots-source", streetParkingDots));
         } catch (Error error) {
             System.out.println(error);
         }
@@ -401,19 +386,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         fillColor(Color.parseColor("#008CFF")),
                         fillOpacity(0.12f));
 
-        // Street parking dots layer
-        streetParkingDotsLayer = new CircleLayer("street-parking-dots-layer", "street-parking-dots-source")
-                .withProperties(
-                        circleRadius(Function.zoom(Stops.exponential(
-                                Stop.stop(13f, circleRadius(1f)),
-                                Stop.stop(17f, circleRadius(6f))
-                        ))),
-                        circleColor(Color.argb(1, 55, 148, 179)),
-                        circleOpacity(Function.zoom(Stops.exponential(
-                                Stop.stop(14f, circleOpacity(0f)),
-                                Stop.stop(15f, circleOpacity(.3f))
-                        ))));
-
         // Vehicle dots layer
         vehicleDotsLayer = new CircleLayer("vehicle-dots-layer", "vehicles-source")
                 .withProperties(
@@ -448,7 +420,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         // Add the layers in order
         mapboxMap.addLayer(streetParkingZonesLayer);
-        mapboxMap.addLayer(streetParkingDotsLayer);
         mapboxMap.addLayer(vehicleDotsLayer);
         mapboxMap.addLayer(vehicleMarkersLayer);
         mapboxMap.addLayer(locationMarkersLayer);
@@ -479,7 +450,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     @Override
     public void onCameraChange(@NonNull CameraPosition position) {
         if (vehicleDotsLayer != null) {
-            if (position.zoom >= 14) {
+            if (position.zoom >= 13) {
                 vehicleDotsLayer.setProperties(visibility(NONE));
                 vehicleMarkersLayer.setProperties(visibility(VISIBLE));
             } else {
