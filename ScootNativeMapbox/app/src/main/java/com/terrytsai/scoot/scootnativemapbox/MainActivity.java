@@ -34,7 +34,6 @@ import com.mapbox.mapboxsdk.style.functions.stops.Stops;
 import com.mapbox.mapboxsdk.style.layers.CircleLayer;
 import com.mapbox.mapboxsdk.style.layers.FillLayer;
 import com.mapbox.mapboxsdk.style.layers.Layer;
-import com.mapbox.mapboxsdk.style.layers.PropertyValue;
 import com.mapbox.mapboxsdk.style.layers.SymbolLayer;
 import com.mapbox.mapboxsdk.style.sources.GeoJsonSource;
 import com.mapbox.mapboxsdk.style.sources.Source;
@@ -56,7 +55,6 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.ArrayList;
 import java.util.List;
 
 import static com.mapbox.mapboxsdk.style.layers.Property.NONE;
@@ -88,7 +86,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private Layer vehicleMarkersLayer;
     private Layer streetParkingZonesLayer;
     private Layer locationMarkersLayer;
-    private Layer selectedMarker;
+    private Layer selectedLocationMarker;
+    private Layer selectedVehicleMarker;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -311,18 +310,28 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         // Add the selected marker source
         FeatureCollection emptySource = FeatureCollection.fromFeatures(new Feature[]{});
-        Source selectedMarkerSource = new GeoJsonSource("selected-marker", emptySource);
-        mapboxMap.addSource(selectedMarkerSource);
+        Source selectedLocationMarkerSource = new GeoJsonSource("selected-location-marker", emptySource);
+        Source selectedVehicleMarkerSource = new GeoJsonSource("selected-vehicle-marker", emptySource);
+        mapboxMap.addSource(selectedLocationMarkerSource);
+        mapboxMap.addSource(selectedVehicleMarkerSource);
 
         // Selected location markers layer
-        selectedMarker = new SymbolLayer("selected-marker-layer", "selected-marker")
+        selectedLocationMarker = new SymbolLayer("selected-location-marker-layer", "selected-location-marker")
                 .withProperties(
                         iconImage("blue-marker"),
                         iconSize(2f),
                         iconOffset(new Float[]{0f, -12f}));
 
+        // Selected scooter markers layer
+        selectedVehicleMarker = new SymbolLayer("selected-vehicle-marker-layer", "selected-vehicle-marker")
+                .withProperties(
+                        iconImage("red-marker"),
+                        iconSize(2f),
+                        iconOffset(new Float[]{0f, -12f}));
+
         // Add another layer after loading locations, this seems to force the map to update without needing to zoom
-        mapboxMap.addLayer(selectedMarker);
+        mapboxMap.addLayer(selectedLocationMarker);
+        mapboxMap.addLayer(selectedVehicleMarker);
     }
 
     @Override
@@ -428,22 +437,43 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     @Override
     public void onMapClick(@NonNull LatLng point) {
         final PointF pixel = mapboxMap.getProjection().toScreenLocation(point);
-        List<Feature> features = mapboxMap.queryRenderedFeatures(pixel, "locations-layer");
+        List<Feature> locationFeatures = mapboxMap.queryRenderedFeatures(pixel, "locations-layer");
+        List<Feature> vehicleFeatures = mapboxMap.queryRenderedFeatures(pixel, "vehicle-markers-layer");
 
-        if (features.isEmpty()) {
+        if (locationFeatures.isEmpty() && vehicleFeatures.isEmpty()) {
             FeatureCollection emptySource = FeatureCollection.fromFeatures(new Feature[]{});
-            GeoJsonSource source = mapboxMap.getSourceAs("selected-marker");
-            if (source != null) {
-                source.setGeoJson(emptySource);
+            GeoJsonSource selectedLocationSource = mapboxMap.getSourceAs("selected-location-marker");
+            if (selectedLocationSource != null) {
+                selectedLocationSource.setGeoJson(emptySource);
             }
-            return;
-        }
-
-        FeatureCollection featureCollection = FeatureCollection.fromFeatures(
-                new Feature[]{Feature.fromGeometry(features.get(0).getGeometry())});
-        GeoJsonSource source = mapboxMap.getSourceAs("selected-marker");
-        if (source != null) {
-            source.setGeoJson(featureCollection);
+            GeoJsonSource selectedVehicleSource = mapboxMap.getSourceAs("selected-vehicle-marker");
+            if (selectedVehicleSource != null) {
+                selectedVehicleSource.setGeoJson(emptySource);
+            }
+        } else if (!locationFeatures.isEmpty()) {
+            FeatureCollection locationFeatureCollection = FeatureCollection.fromFeatures(
+                    new Feature[]{Feature.fromGeometry(locationFeatures.get(0).getGeometry())});
+            GeoJsonSource source = mapboxMap.getSourceAs("selected-location-marker");
+            if (source != null) {
+                source.setGeoJson(locationFeatureCollection);
+            }
+            FeatureCollection emptySource = FeatureCollection.fromFeatures(new Feature[]{});
+            GeoJsonSource selectedVehicleSource = mapboxMap.getSourceAs("selected-vehicle-marker");
+            if (selectedVehicleSource != null) {
+                selectedVehicleSource.setGeoJson(emptySource);
+            }
+        } else {
+            FeatureCollection vehicleFeatureCollection = FeatureCollection.fromFeatures(
+                    new Feature[]{Feature.fromGeometry(vehicleFeatures.get(0).getGeometry())});
+            GeoJsonSource source = mapboxMap.getSourceAs("selected-vehicle-marker");
+            if (source != null) {
+                source.setGeoJson(vehicleFeatureCollection);
+            }
+            FeatureCollection emptySource = FeatureCollection.fromFeatures(new Feature[]{});
+            GeoJsonSource selectedLocationSource = mapboxMap.getSourceAs("selected-location-marker");
+            if (selectedLocationSource != null) {
+                selectedLocationSource.setGeoJson(emptySource);
+            }
         }
     }
 
